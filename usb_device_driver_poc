@@ -1,0 +1,143 @@
+## USB Device Driver 01 ##
+1. Parts:
+
+			User Space
+		-------------------------
+			Kernel Space
+		
+			USB Driver
+			USB Core (OS independent module)
+		usb_host_controller
+		-------------------------
+		
+			Device (VendorID:ProductID)
+			
+	1. usb_host_controller takes binary info (low level) from device and makes it available (and understandable) to USB Core
+	2. USB Core gives the info to OS (Kernel)
+	3. Kernel checks to see if there is a driver to handle the device
+		1. If so, device is made available to user space
+		2. If not, device is not made available to user space (but kernel recognizes the device)
+	
+			Device
+				- Configuration
+					- Interface 1
+						- endpoint 0
+						- endpoint 1
+					- Interface 2
+						- endpoint 0
+						- endpoint 1
+						
+		1. Every [USB] device has a profile (Configuration)
+			1. There are a number of interfaces within the configuration
+				1. Interface: Defines functionality of the device
+					1. Device can be a printer & Scanner & Fax
+						1. Each function has an interface
+							1. Each interface has 1 or more endpoints
+								1. Endpoint: Describes input and output (a way for fast transfer of info from a compute to a device)
+									1. Endpoint 0: Every device has this
+										1. Used to initialize the device and make it ready for usage
+									2. Different types of endpoints:
+										1. Control (bi-directional): For controlling device
+											1. Resetting device
+											2. Querying for info
+										2. Interrupt (uni-directional)
+											1. Used for sending info fast between device and computer
+												1. Endpoints are usually 8 byte long (MSBs indicate data direction - from or to computer)
+										3. Bulk (uni-directional)
+											1. Usually used for mass storage
+												1. To send bulk data at once
+										4. Isochronous (uni-directional)
+											1. Like Bulk but has band-width guarrantee
+												1. Ex: Audio and Video
+										5. Endpoints are identified by addresses - the address is used to send info to device or get info from device
+				2. `lsusb` - all USB devices installed on computer
+					1. `<vendor-id>:<product-id>`: (Ex: 0781:5567 for SanDisk pendrive)
+					2. Bus no
+
+## USB Device Driver 02 ##
+1. Example:
+
+		#include <linux/module.h>
+		#include <linux/kernel.h>
+		#include <linux/usb.h>
+		
+		// probe function - called when the supported device is connected to the computer - but not called if there is another driver handling the device (this needs to be unloaded first)
+		// called on device insertion if and only if no other driver has beat us to the punch
+		static int pen_probe(struct usb_interface *interface, const struct usb_device_id *id) // interface - represents a logical device - speaker, usb camera, ..., id - struct defined
+		{
+			printk(KERN_INFO "[*] SolidusCode Pen drive (%40X:%40X) plugged\n", id->idVendor, id_idProduct);
+			return 0; // return 0 indicates we will manage this device
+			
+			/*
+			If this driver returns non-zero, then this indicates to the kernel that this driver is not going to handle the device.
+			The function is meant to initialize local infomation, structures, memory and returns 0 - indicates that it will handle
+			*/
+		}
+		
+		// disconnect function - meant for memory cleanup etc ...
+		// It is called whenever device is removed from the system
+		static void pen_disconnect(struct usb_interface *interface) {
+			printk(KERN_INFO "[*] SolidusCode Pen drive removed\n";
+		} // does not return anything
+		
+		// usb_device_id
+		static struct usb_device_id pentable[] = { // we can have more than one
+			//0781:5567
+			{ USB_DEVICE(0x0781, 0x5567) }, // information is obtained using "lsusb" at the command line - macro USB_DEVICE
+			// {USB_DEVICE(<v>, <p>}, // if one more device needs to be supported
+			{} /* Terminating entry */
+		};
+		MODULE_DEVICE_TABLE (usb, pen_table);
+		
+		// usb_driver - definition
+		static struct usb_driver pen_driver =
+		{
+			.name = "SanDisk-USB Stick-Driver", // names driver
+			.id_table = pen_table, // matches driver to device attached to usb bus - <vendor-id>:<product-id> - the driver is called by kernel when the specific device is plugged into the usb port
+			.probe = pen_probe,
+			.disconnect = pen_disconnect,	
+		};
+		
+		static int __init pen_init(void) {
+			int ret = -1;
+			printk(KERN_INFO "[*] SolidusCode Constructor of driver");
+			printk(KERN_INFO "\tRegistering Driver with Kernel");
+			// Register device with USB core
+			ret = usb_register(&pen_driver);
+			printk(KERN_INFO "\tRegistration is complete");
+			return ret;
+		}
+		
+		static void __exit pen_exit(void) {
+			// derigester
+			printk(KERN_INFO "[*] SolidusCode Destructor of driver");
+			usb_deregister(&pen_driver);
+			printk(KERN_INFO "\tunregistration complete!");
+		}
+		
+		module_init(pen_init);
+		module_exit(pen_exit);
+		
+	1. For more info:
+		1. `lsusb -v` **(M)**
+		
+2. Makefile:
+
+		obj-m := stick_driver.o
+		
+		KERNL_DIR = /lib/modules/$(shell uname -r)/build
+		PWD = $(shell pwd)
+		all:
+			$(MAKE) -C $(KERNEL_DIR) SUBDIRS=$(PWD) modules
+		clean:
+			rm -rf *.o *.ko *.mod.* *.symvers *.order *~
+			
+3. `sudo make`
+4. `sudo insmod stick_driver.ko`
+	1. `dmesg`
+		1. `probe` function is not getting called
+			1. `sudo rmmod usb_storage` - manages pen-drives
+		2. `sudo rmmod stick_driver.ko`
+		3. `sudo insmod stick_driver.ko`
+	2. Plug the pen-drive
+		1. `dmesg`

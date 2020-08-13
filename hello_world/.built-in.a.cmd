@@ -1,0 +1,1 @@
+cmd_/home/am/Documents/kernel_programming/hello_world/built-in.a := rm -f /home/am/Documents/kernel_programming/hello_world/built-in.a; ar cDPrST /home/am/Documents/kernel_programming/hello_world/built-in.a 
